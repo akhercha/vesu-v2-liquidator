@@ -9,8 +9,8 @@ description = "Liquidator bot for the Vesu v2 Protocol"
 readme = "README.md"
 
 [dependencies]
-evian = { version = "0.3.14", registry = "pragma", features = ["vesu_v2"] }
-pragma-common = { version = "0.4.1", features = [
+evian = { version = "0.7.33", registry = "pragma", features = ["vesu_v2"] }
+pragma-common = { version = "0.6.4", features = [
   "telemetry",
   "serde",
   "task-group",
