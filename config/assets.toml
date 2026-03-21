@@ -113,12 +113,6 @@ decimals = 18
 address = "0x04be8945e61dc3e19ebadd1579a6bd53b262f51ba89e6f8b0c4bc9a7e3c633fc"
 
 [[assets]]
-name = "USN"
-ticker = "USN"
-decimals = 18
-address = "0x01e6545cab7ba4ac866768ba5e1bd540893762286ed3fea7f9c02bfa147e135b"
-
-[[assets]]
 name = "Staked USN"
 ticker = "sUSN"
 decimals = 18

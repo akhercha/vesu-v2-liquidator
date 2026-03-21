@@ -41,7 +41,6 @@ pub enum Currency {
     #[strum(serialize = "YBTC.B")]
     YBTC_B,
     mRe7YIELD,
-    USN,
     sUSN,
     EKUBO,
 }
