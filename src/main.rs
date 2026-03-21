@@ -39,10 +39,13 @@ async fn main() -> anyhow::Result<()> {
 
     let storage = Arc::new(Storage::open(&run_cmd.storage_path)?);
 
-    let starting_block = run_cmd
-        .starting_block
-        .or_else(|| storage.get_last_block().ok().flatten())
-        .unwrap_or(DEFAULT_STARTING_BLOCK);
+    let stored_block = storage.get_last_block().ok().flatten();
+    let starting_block = match (run_cmd.starting_block, stored_block) {
+        (Some(cli), Some(stored)) => cli.max(stored),
+        (Some(cli), None) => cli,
+        (None, Some(stored)) => stored,
+        (None, None) => DEFAULT_STARTING_BLOCK,
+    };
 
     tracing::info!(
         "[🚀 Main] Starting from block {starting_block} (stored: {:?}, cli: {:?})",
