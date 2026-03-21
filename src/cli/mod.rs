@@ -1,5 +1,7 @@
 pub mod account;
 
+use std::path::PathBuf;
+
 use anyhow::{Result, anyhow};
 use url::Url;
 
@@ -16,23 +18,49 @@ pub struct RunCmd {
     #[clap(flatten)]
     pub account_params: AccountParams,
 
-    /// The rpc endpoint url.
-    #[clap(long, value_parser = parse_url, value_name = "RPC URL", env = "RPC_URL")]
-    pub rpc_url: Url,
-
-    /// The block you want to start syncing from.
+    /// The rpc endpoint urls (comma-separated for fallback).
     #[clap(
         long,
-        short,
-        value_name = "BLOCK NUMBER",
-        env = "STARTING_BLOCK",
-        default_value = "2383614"
+        value_parser = parse_url,
+        value_name = "RPC URL",
+        env = "RPC_URL",
+        num_args = 1..,
+        value_delimiter = ','
     )]
-    pub starting_block: u64,
+    pub rpc_url: Vec<Url>,
+
+    /// The block you want to start syncing from (overrides stored block).
+    #[clap(long, short, value_name = "BLOCK NUMBER", env = "STARTING_BLOCK")]
+    pub starting_block: Option<u64>,
 
     /// Apibara API Key for indexing.
     #[clap(long, value_name = "APIBARA API KEY", env = "APIBARA_API_KEY")]
     pub apibara_api_key: String,
+
+    #[clap(
+        long,
+        value_name = "APIBARA DNA URL",
+        env = "APIBARA_DNA_URL",
+        default_value = "https://mainnet.starknet.a5a.ch"
+    )]
+    pub apibara_dna_url: String,
+
+    #[clap(
+        long,
+        value_name = "LIQUIDATE CONTRACT ADDRESS",
+        env = "LIQUIDATE_CONTRACT_ADDRESS",
+        default_value = "0x6b895ba904fb8f02ed0d74e343161de48e611e9e771be4cc2c997501dbfb418"
+    )]
+    pub liquidate_contract_address: String,
+
+    /// Path to the local storage directory.
+    #[clap(
+        long,
+        value_name = "STORAGE PATH",
+        env = "STORAGE_PATH",
+        default_value = "./data/vesu-v2"
+    )]
+    pub storage_path: PathBuf,
 }
 
 impl RunCmd {

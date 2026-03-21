@@ -6,10 +6,11 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::Duration;
 
-use evian::{utils::indexer::handler::StarknetEventMetadata, vesu::v2::data::VesuDataClient};
-use pragma_common::starknet::{FallbackProvider, StarknetNetwork};
+use crate::services::indexer::EventMetadata;
+use crate::storage::Storage;
+use crate::types::vesu_client::VesuClient;
+use pragma_common::starknet::FallbackProvider;
 use starknet::core::types::Felt;
-use starknet::macros::felt_hex;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::bindings::liquidate::Liquidate;
@@ -20,34 +21,53 @@ use crate::types::pool::PoolName;
 use crate::types::{account::StarknetAccount, position::VesuPosition};
 
 pub struct MonitoringService {
-    pub vesu_client: Arc<VesuDataClient<FallbackProvider>>,
-    pub rx_from_indexer: mpsc::UnboundedReceiver<(StarknetEventMetadata, PositionDelta)>,
+    pub vesu_client: Arc<VesuClient>,
+    pub rx_from_indexer: mpsc::UnboundedReceiver<(EventMetadata, PositionDelta)>,
     pub current_positions: HashMap<(PoolName, String), VesuPosition>,
     wait_for_indexer: Option<oneshot::Receiver<()>>,
     liquidate_contract: Arc<Liquidate<StarknetSingleOwnerAccount>>,
     account: StarknetAccount,
+    storage: Arc<Storage>,
 }
 
 impl MonitoringService {
     pub fn new(
         provider: FallbackProvider,
         account: StarknetAccount,
-        rx_from_indexer: mpsc::UnboundedReceiver<(StarknetEventMetadata, PositionDelta)>,
+        rx_from_indexer: mpsc::UnboundedReceiver<(EventMetadata, PositionDelta)>,
         wait_for_indexer: oneshot::Receiver<()>,
+        storage: Arc<Storage>,
+        liquidate_contract_address: Felt,
     ) -> Self {
-        const LIQUIDATE_CONTRACT_ADDRESS: Felt =
-            felt_hex!("0x6b895ba904fb8f02ed0d74e343161de48e611e9e771be4cc2c997501dbfb418");
+        let current_positions = match storage.load_positions() {
+            Ok(positions) => {
+                if !positions.is_empty() {
+                    tracing::info!(
+                        "[🔭 Monitoring] Restored {} positions from storage",
+                        positions.len()
+                    );
+                }
+                positions
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "[🔭 Monitoring] Failed to load positions from storage: {e}. Starting fresh."
+                );
+                HashMap::new()
+            }
+        };
 
         Self {
-            vesu_client: Arc::new(VesuDataClient::new(StarknetNetwork::Mainnet, provider)),
+            vesu_client: Arc::new(VesuClient::new(provider)),
             rx_from_indexer,
-            current_positions: HashMap::new(),
+            current_positions,
             wait_for_indexer: Some(wait_for_indexer),
             liquidate_contract: Arc::new(Liquidate::new(
-                LIQUIDATE_CONTRACT_ADDRESS,
+                liquidate_contract_address,
                 account.0.clone(),
             )),
             account,
+            storage,
         }
     }
 
@@ -60,7 +80,7 @@ impl MonitoringService {
             .take()
             .expect("wait_for_indexer should be present in the Option. The task is ran only once!");
 
-        let mut interval = tokio::time::interval(Duration::from_secs(10));
+        let mut interval = tokio::time::interval(Duration::from_secs(1));
 
         loop {
             tokio::select! {
@@ -73,13 +93,16 @@ impl MonitoringService {
 
                         if let Some(position) = self.current_positions.get_mut(&(pool, position_key.clone())) {
                             position.update_from_delta(event);
+                            self.persist_position(&pool, &position_key);
                         } else {
                             match VesuPosition::new(&metadata, &self.vesu_client, event).await {
                                 Ok(position) => {
-                                    self.current_positions.insert((pool, position.position_id()), position);
+                                    let pos_id = position.position_id();
+                                    self.current_positions.insert((pool, pos_id.clone()), position);
+                                    self.persist_position(&pool, &pos_id);
                                 }
                                 Err(e) => {
-                                    tracing::error!("[🔭 Monitoring] Could not new create position: {e}");
+                                    tracing::error!("[🔭 Monitoring] Could not create position: {e}");
                                 }
                             };
                         }
@@ -91,10 +114,11 @@ impl MonitoringService {
                         };
 
                         if to_close {
-                            self.current_positions.remove(&(pool, position_key));
+                            self.current_positions.remove(&(pool, position_key.clone()));
+                            if let Err(e) = self.storage.remove_position(&pool, &position_key) {
+                                tracing::warn!("[🔭 Monitoring] Failed to remove position from storage: {e}");
+                            }
                         }
-
-
                     }
                 },
                 _ = interval.tick() => {
@@ -108,27 +132,26 @@ impl MonitoringService {
                         }
 
                         if p.is_liquidable() {
-                            tracing::info!(
-                                "[🔭 Monitoring] 🔫 Liquidating {p}",
-                            );
-
-                            if let Err(e) = self.liquidate_position(p).await {
-                                if e.to_string().contains("not-undercollateralized") {
-                                    tracing::warn!("[🔭 Monitoring] Position was not under collateralized!");
-                                } else {
-                                    tracing::error!(
-                                        error = %e,
-                                        "[🔭 Monitoring] 😨 Could not liquidate position",
-                                    );
-                                }
-                            }
+                            let position = p.clone();
+                            let contract = Arc::clone(&self.liquidate_contract);
+                            let account = self.account.clone();
+                            tokio::spawn(async move {
+                                Self::liquidate_position(&account, &contract, &position).await;
+                            });
                         }
-
-
                     }
-
                 }
             }
+        }
+    }
+
+    fn persist_position(&self, pool: &PoolName, position_key: &str) {
+        if let Some(position) = self
+            .current_positions
+            .get(&(*pool, position_key.to_string()))
+            && let Err(e) = self.storage.save_position(pool, position_key, position)
+        {
+            tracing::warn!("[🔭 Monitoring] Failed to persist position: {e}");
         }
     }
 
@@ -144,20 +167,40 @@ impl MonitoringService {
         hasher.finish().to_string()
     }
 
-    async fn liquidate_position(&self, position: &VesuPosition) -> anyhow::Result<()> {
+    async fn liquidate_position(
+        account: &StarknetAccount,
+        liquidate_contract: &Arc<Liquidate<StarknetSingleOwnerAccount>>,
+        position: &VesuPosition,
+    ) {
+        tracing::info!("[🔭 Monitoring] 🔫 Liquidating {position}");
         let started_at = std::time::Instant::now();
 
-        let liquidation_tx = position
-            .get_vesu_liquidate_tx(&self.liquidate_contract, &self.account.account_address())
-            .await?;
+        let liquidation_tx = match position
+            .get_vesu_liquidate_tx(liquidate_contract, &account.account_address())
+            .await
+        {
+            Ok(tx) => tx,
+            Err(e) => {
+                tracing::error!("[🔭 Monitoring] Failed to build liquidation TX: {e}");
+                return;
+            }
+        };
 
-        let tx_hash = self.account.execute_txs(&[liquidation_tx]).await?;
-
-        tracing::info!(
-            "[🔭 Monitoring] ✅ Liquidated position #{}! (tx {tx_hash:#064x}) - ⌛ {:?}",
-            position.position_id(),
-            started_at.elapsed()
-        );
-        Ok(())
+        match account.execute_txs(&[liquidation_tx]).await {
+            Ok(tx_hash) => {
+                tracing::info!(
+                    "[🔭 Monitoring] ✅ Liquidated #{}! (tx {tx_hash:#064x}) - ⌛ {:?}",
+                    position.position_id(),
+                    started_at.elapsed()
+                );
+            }
+            Err(e) => {
+                if e.to_string().contains("not-undercollateralized") {
+                    tracing::warn!("[🔭 Monitoring] Position was not undercollateralized");
+                } else {
+                    tracing::error!(error = %e, "[🔭 Monitoring] 😨 Could not liquidate position");
+                }
+            }
+        }
     }
 }

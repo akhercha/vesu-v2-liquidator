@@ -1,11 +1,24 @@
 use anyhow::bail;
-use evian::vesu::v2::data::indexer::events::{
-    CollateralAddress, DebtAddress, PoolAddress, PoolDetails,
-};
 use serde::{Deserialize, Serialize};
 use starknet::{core::types::Felt, macros::felt_hex};
 
 use crate::types::currency::Currency;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Default)]
+pub struct PoolAddress(pub Felt);
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Default)]
+pub struct CollateralAddress(pub Felt);
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Default)]
+pub struct DebtAddress(pub Felt);
+
+#[derive(Debug, Clone, Serialize, Hash, PartialEq, Eq)]
+pub struct PoolDetails {
+    pub pool_address: PoolAddress,
+    pub collateral_address: CollateralAddress,
+    pub debt_address: DebtAddress,
+}
 
 pub type VesuPoolId = Felt;
 
@@ -31,6 +44,9 @@ pub enum PoolName {
     Re7xBTC,
     Re7USDCStableCore,
     Re7USDCFrontier,
+    Re7ETH,
+    Re7STRK,
+    ClearstarUSDCReactor,
 }
 
 impl PoolName {
@@ -53,6 +69,16 @@ impl PoolName {
             }
             Self::Re7USDCFrontier => {
                 felt_hex!("0x05c03e7e0ccfe79c634782388eb1e6ed4e8e2a013ab0fcc055140805e46261bd")
+            }
+            // TODO(akhercha): replace with actual pool addresses
+            Self::Re7ETH => {
+                felt_hex!("0x0635cb8ba1c3b0b21cb2056f6b1ba75c3421ce505212aeb43ffd56b58343fa17")
+            }
+            Self::Re7STRK => {
+                felt_hex!("0x01fcdacc1d8184eca7b472b5acbaf1500cec9d5683ca95fede8128b46c8f9cc2")
+            }
+            Self::ClearstarUSDCReactor => {
+                felt_hex!("0x01bc5de51365ed7fbb11ebc81cef9fd66b70050ec10fd898f0c4698765bf5803")
             }
         }
     }
@@ -77,6 +103,11 @@ impl TryFrom<&Felt> for PoolName {
             _ if value == &Self::Re7xBTC.pool_address() => Ok(Self::Re7xBTC),
             _ if value == &Self::Re7USDCStableCore.pool_address() => Ok(Self::Re7USDCStableCore),
             _ if value == &Self::Re7USDCFrontier.pool_address() => Ok(Self::Re7USDCFrontier),
+            _ if value == &Self::Re7ETH.pool_address() => Ok(Self::Re7ETH),
+            _ if value == &Self::Re7STRK.pool_address() => Ok(Self::Re7STRK),
+            _ if value == &Self::ClearstarUSDCReactor.pool_address() => {
+                Ok(Self::ClearstarUSDCReactor)
+            }
             () => bail!("Unknown VesuPool for address {value:x}"),
         }
     }

@@ -43,6 +43,7 @@ pub enum Currency {
     mRe7YIELD,
     USN,
     sUSN,
+    EKUBO,
 }
 
 impl Currency {

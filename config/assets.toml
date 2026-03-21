@@ -123,3 +123,9 @@ name = "Staked USN"
 ticker = "sUSN"
 decimals = 18
 address = "0x02411565ef1a14decfbe83d2e987cced918cd752508a3d9c55deb67148d14d17"
+
+[[assets]]
+name = "Ekubo Protocol"
+ticker = "EKUBO"
+decimals = 18
+address = "0x075afe6402ad5a5c20dd25e10ec3b3986acaa647b77e4ae24b0cbc9a54a27a87"

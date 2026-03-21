@@ -3,12 +3,11 @@ use std::hash::Hasher;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use crate::services::indexer::EventMetadata;
+use crate::types::vesu_client::VesuClient;
 use cainome::cairo_serde::U256;
 use colored::Colorize;
-use evian::utils::indexer::handler::StarknetEventMetadata;
-use evian::vesu::v2::data::VesuDataClient;
 use num_traits::Pow;
-use pragma_common::starknet::fallback_provider::FallbackProvider;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Deserialize;
@@ -39,8 +38,8 @@ pub struct VesuPosition {
 impl VesuPosition {
     /// Creates a new Position from a Vesu Event.
     pub async fn new(
-        event_metadata: &StarknetEventMetadata,
-        vesu_client: &Arc<VesuDataClient<FallbackProvider>>,
+        event_metadata: &EventMetadata,
+        vesu_client: &Arc<VesuClient>,
         event: PositionDelta,
     ) -> anyhow::Result<Self> {
         let mut new_position = Self {
@@ -70,10 +69,7 @@ impl VesuPosition {
     }
 
     /// Updates the LLTV of the position.
-    async fn update_lltv(
-        &mut self,
-        vesu_client: &Arc<VesuDataClient<FallbackProvider>>,
-    ) -> anyhow::Result<()> {
+    async fn update_lltv(&mut self, vesu_client: &Arc<VesuClient>) -> anyhow::Result<()> {
         let pair_config = vesu_client
             .pair_config(
                 self.pool_name.pool_address(),

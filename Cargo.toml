@@ -9,7 +9,9 @@ description = "Liquidator bot for the Vesu v2 Protocol"
 readme = "README.md"
 
 [dependencies]
-evian = { version = "0.7.33", registry = "pragma", features = ["vesu_v2"] }
+apibara-dna-protocol = "2"
+apibara-dna-sdk = { version = "2", features = ["starknet"] }
+num-bigint = "0.4"
 pragma-common = { version = "0.6.4", features = [
   "telemetry",
   "serde",
@@ -17,6 +19,11 @@ pragma-common = { version = "0.6.4", features = [
   "services",
   "starknet",
 ] }
+prost = "0.13"
+tokio-stream = "0.1"
+tonic = "0.14"
+
+heed = "0.20"
 
 # Misc
 anyhow = "1.0"
@@ -38,7 +45,9 @@ rust_decimal = { version = "1.37.1", features = [
 rust_decimal_macros = "1.37.1"
 serde = "1.0"
 serde_json = "1.0"
-starknet = { version = "0.17.0" }
+starknet = { package = "starknet-rust", version = "0.18.0" }
+# NOTE: starknet-rust macros expand to `::starknet_rust::*`, so we need the
+# extern crate alias in main.rs: `extern crate starknet as starknet_rust;`
 strum = { version = "0.27", features = ["derive"] }
 tokio = { version = "1.47", features = ["full"] }
 toml = "0.9.7"
