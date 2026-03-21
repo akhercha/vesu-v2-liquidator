@@ -2,7 +2,7 @@ pub mod task;
 pub mod vesu_prices;
 
 use std::str::FromStr;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use futures_util::future::join_all;
@@ -20,25 +20,48 @@ use crate::services::oracle::vesu_prices::VESU_PRICES;
 #[derive(Clone)]
 pub struct OracleService {
     starknet_provider: FallbackProvider,
+    last_heartbeat: Instant,
+    update_cycles: u32,
 }
 
 impl OracleService {
     const PRICES_UPDATE_INTERVAL: Duration = Duration::from_secs(10);
 
     pub fn new(starknet_provider: FallbackProvider) -> Self {
-        Self { starknet_provider }
+        Self {
+            starknet_provider,
+            last_heartbeat: Instant::now(),
+            update_cycles: 0,
+        }
     }
 
-    /// Starts the oracle service that will fetch the latest oracle prices every
-    /// PRICES_UPDATE_INTERVAL seconds.
-    pub async fn run_forever(self) -> Result<()> {
+    pub async fn run_forever(mut self) -> Result<()> {
         loop {
             self.update_prices().await?;
+            self.update_cycles += 1;
+            self.log_heartbeat();
             tokio::time::sleep(Self::PRICES_UPDATE_INTERVAL).await;
         }
     }
 
-    /// Update all the monitored assets with their latest USD price asynchronously.
+    fn log_heartbeat(&mut self) {
+        const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(60);
+
+        let now = Instant::now();
+        if now.duration_since(self.last_heartbeat) < HEARTBEAT_INTERVAL {
+            return;
+        }
+
+        tracing::info!(
+            "[🔮 Oracle] {} prices updated ({} cycles)",
+            VESU_PRICES.0.len(),
+            self.update_cycles,
+        );
+
+        self.update_cycles = 0;
+        self.last_heartbeat = now;
+    }
+
     async fn update_prices(&self) -> Result<()> {
         let assets: Vec<OnchainAssetConfig> = VESU_PRICES
             .0

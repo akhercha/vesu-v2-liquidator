@@ -6,7 +6,7 @@ use std::sync::Arc;
 use crate::services::indexer::EventMetadata;
 use crate::types::vesu_client::VesuClient;
 use cainome::cairo_serde::U256;
-use colored::Colorize;
+
 use num_traits::Pow;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -144,45 +144,26 @@ impl VesuPosition {
         self.debt_value_in_usd() / self.collateral_value_in_usd()
     }
 
-    /// Check if the current position is liquidable.
-    /// Also logs a warning if the position is close to being liquidable.
     pub fn is_liquidable(&self) -> bool {
-        const ALMOST_LIQUIDABLE_THRESHOLD: Decimal = dec!(0.1);
-
         if self.lltv.is_zero() {
             return false;
         }
 
-        let ltv_ratio = self.ltv();
-
-        // Avoid division by zero if collateral is zero
-        if ltv_ratio.is_zero() {
+        let ltv = self.ltv();
+        if ltv.is_zero() {
             return !self.debt.amount.is_zero();
         }
 
-        let is_liquidable = ltv_ratio >= self.lltv;
-        let almost_liquidable_threshold = self.lltv - ALMOST_LIQUIDABLE_THRESHOLD;
-        let is_almost_liquidable = !is_liquidable && ltv_ratio > almost_liquidable_threshold;
-
-        if is_liquidable || is_almost_liquidable {
-            self.logs_liquidation_state(is_liquidable, ltv_ratio);
-        }
-
-        is_liquidable
+        ltv >= self.lltv
     }
 
-    fn logs_liquidation_state(&self, is_liquidable: bool, ltv_ratio: Decimal) {
-        tracing::info!(
-            "{} is at ratio {:.2}%/{:.2}% => {}",
-            self,
-            ltv_ratio * dec!(100),
-            self.lltv * dec!(100),
-            if is_liquidable {
-                "liquidable! 🚨".green()
-            } else {
-                "almost liquidable 🔫".yellow()
-            }
-        );
+    pub fn is_near_liquidation(&self) -> bool {
+        const THRESHOLD: Decimal = dec!(0.1);
+        if self.lltv.is_zero() || self.is_closed() || self.collateral_value_in_usd().is_zero() {
+            return false;
+        }
+        let ltv = self.ltv();
+        ltv >= self.lltv - THRESHOLD && ltv < self.lltv
     }
 
     /// Returns the TX necessary to liquidate this position using the Vesu Liquidate

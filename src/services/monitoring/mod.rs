@@ -4,7 +4,9 @@ pub mod task;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+use rust_decimal_macros::dec;
 
 use crate::services::indexer::EventMetadata;
 use crate::storage::Storage;
@@ -28,6 +30,8 @@ pub struct MonitoringService {
     liquidate_contract: Arc<Liquidate<StarknetSingleOwnerAccount>>,
     account: StarknetAccount,
     storage: Arc<Storage>,
+    last_summary_log: Instant,
+    near_liquidation_cooldowns: HashMap<String, Instant>,
 }
 
 impl MonitoringService {
@@ -68,6 +72,8 @@ impl MonitoringService {
             )),
             account,
             storage,
+            last_summary_log: Instant::now(),
+            near_liquidation_cooldowns: HashMap::new(),
         }
     }
 
@@ -86,8 +92,6 @@ impl MonitoringService {
             tokio::select! {
                 maybe_msg = self.rx_from_indexer.recv() => {
                     if let Some((metadata, event)) = maybe_msg {
-                        tracing::info!("[🔭 Monitoring] Processing new event from block #{}", metadata.block_number);
-
                         let pool = PoolName::try_from(&metadata.from_address)?;
                         let position_key = Self::compute_position_key(metadata.from_address, &event);
 
@@ -115,6 +119,7 @@ impl MonitoringService {
 
                         if to_close {
                             self.current_positions.remove(&(pool, position_key.clone()));
+                            self.near_liquidation_cooldowns.remove(&position_key);
                             if let Err(e) = self.storage.remove_position(&pool, &position_key) {
                                 tracing::warn!("[🔭 Monitoring] Failed to remove position from storage: {e}");
                             }
@@ -125,6 +130,10 @@ impl MonitoringService {
                     if wait_for_indexer.is_empty() || !self.rx_from_indexer.is_empty() {
                         continue;
                     }
+
+                    let now = Instant::now();
+                    let mut near_liquidation_count = 0u32;
+                    const NEAR_LIQUIDATION_COOLDOWN: Duration = Duration::from_secs(60);
 
                     for p in self.current_positions.values() {
                         if p.is_closed() {
@@ -138,8 +147,32 @@ impl MonitoringService {
                             tokio::spawn(async move {
                                 Self::liquidate_position(&account, &contract, &position).await;
                             });
+                            continue;
+                        }
+
+                        if p.is_near_liquidation() {
+                            near_liquidation_count += 1;
+                            let pos_id = p.position_id();
+                            let on_cooldown = self
+                                .near_liquidation_cooldowns
+                                .get(&pos_id)
+                                .is_some_and(|last| now.duration_since(*last) < NEAR_LIQUIDATION_COOLDOWN);
+                            if !on_cooldown {
+                                tracing::warn!(
+                                    "[🔭 Monitoring] ⚠️ #{} {}/{} ({}) LTV {:.2}%/{:.2}%",
+                                    pos_id,
+                                    p.collateral.currency,
+                                    p.debt.currency,
+                                    p.pool_name,
+                                    p.ltv() * dec!(100),
+                                    p.lltv * dec!(100),
+                                );
+                                self.near_liquidation_cooldowns.insert(pos_id, now);
+                            }
                         }
                     }
+
+                    self.log_summary(now, near_liquidation_count);
                 }
             }
         }
@@ -165,6 +198,28 @@ impl MonitoringService {
         ]
         .hash(&mut hasher);
         hasher.finish().to_string()
+    }
+
+    fn log_summary(&mut self, now: Instant, near_liquidation_count: u32) {
+        const SUMMARY_INTERVAL: Duration = Duration::from_secs(30);
+
+        if now.duration_since(self.last_summary_log) < SUMMARY_INTERVAL {
+            return;
+        }
+
+        let active = self
+            .current_positions
+            .values()
+            .filter(|p| !p.is_closed())
+            .count();
+
+        tracing::info!(
+            "[🔭 Monitoring] {} active positions | {} near liquidation",
+            active,
+            near_liquidation_count,
+        );
+
+        self.last_summary_log = now;
     }
 
     async fn liquidate_position(

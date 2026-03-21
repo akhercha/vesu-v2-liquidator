@@ -3,6 +3,7 @@ pub mod task;
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use apibara_dna_protocol::dna::stream::DataFinality;
@@ -58,6 +59,9 @@ pub struct IndexerService {
     meet_with_monitoring: Option<oneshot::Sender<()>>,
     scale_cache: HashMap<Felt, Decimal>,
     storage: Arc<Storage>,
+    last_progress_log: Instant,
+    block_at_last_log: u64,
+    events_processed: u64,
 }
 
 impl IndexerService {
@@ -79,6 +83,9 @@ impl IndexerService {
             meet_with_monitoring: Some(meet_with_monitoring),
             scale_cache: HashMap::new(),
             storage,
+            last_progress_log: Instant::now(),
+            block_at_last_log: starting_block,
+            events_processed: 0,
         }
     }
 
@@ -121,7 +128,9 @@ impl IndexerService {
                         if !reached_live && data.production == DATA_PRODUCTION_LIVE {
                             reached_live = true;
                             tracing::info!(
-                                "[🔢 Indexer] 🥳 Vesu indexer reached the tip of the chain!"
+                                "[🔢 Indexer] 🥳 Reached chain tip at block #{} | {} events indexed",
+                                self.current_block,
+                                self.events_processed,
                             );
                             if let Some(meet) = self.meet_with_monitoring.take() {
                                 meet.send(()).expect("Rendezvous from Indexer dropped?");
@@ -144,6 +153,10 @@ impl IndexerService {
 
                         if let Err(e) = self.storage.set_last_block(self.current_block) {
                             tracing::warn!("[🔢 Indexer] Failed to persist last block: {e}");
+                        }
+
+                        if !reached_live {
+                            self.log_progress();
                         }
                     }
                     DnaMessage::Invalidate(invalidated) => {
@@ -230,8 +243,32 @@ impl IndexerService {
                 debt_delta,
             },
         ))?;
+        self.events_processed += 1;
 
         Ok(())
+    }
+
+    fn log_progress(&mut self) {
+        const PROGRESS_INTERVAL: Duration = Duration::from_secs(10);
+
+        let now = Instant::now();
+        let elapsed = now.duration_since(self.last_progress_log);
+        if elapsed < PROGRESS_INTERVAL {
+            return;
+        }
+
+        let blocks_delta = self.current_block.saturating_sub(self.block_at_last_log);
+        let rate = blocks_delta as f64 / elapsed.as_secs_f64();
+
+        tracing::info!(
+            "[🔢 Indexer] Block #{} | ~{:.0} blocks/sec | {} events",
+            self.current_block,
+            rate,
+            self.events_processed,
+        );
+
+        self.last_progress_log = now;
+        self.block_at_last_log = self.current_block;
     }
 
     async fn get_asset_scale(
