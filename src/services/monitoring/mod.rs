@@ -156,13 +156,14 @@ impl MonitoringService {
                                 .is_some_and(|last| now.duration_since(*last) < NEAR_LIQUIDATION_COOLDOWN);
                             if !on_cooldown {
                                 tracing::warn!(
-                                    "[🔭 Monitoring] ⚠️ #{} {}/{} ({}) LTV {:.2}%/{:.2}%",
+                                    "[🔭 Monitoring] ⚠️ #{} {}/{} ({}) LTV {:.2}%/{:.2}% | debt ${:.0}",
                                     pos_id,
                                     p.collateral.currency,
                                     p.debt.currency,
                                     p.pool_name,
                                     p.ltv() * dec!(100),
                                     p.lltv * dec!(100),
+                                    p.debt_value_in_usd(),
                                 );
                                 self.near_liquidation_cooldowns.insert(pos_id, now);
                             }
