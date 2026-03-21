@@ -135,18 +135,15 @@ impl MonitoringService {
                     let mut near_liquidation_count = 0u32;
                     const NEAR_LIQUIDATION_COOLDOWN: Duration = Duration::from_secs(60);
 
+                    let mut to_liquidate: Vec<VesuPosition> = Vec::new();
+
                     for p in self.current_positions.values() {
                         if p.is_closed() {
                             continue;
                         }
 
                         if p.is_liquidable() {
-                            let position = p.clone();
-                            let contract = Arc::clone(&self.liquidate_contract);
-                            let account = self.account.clone();
-                            tokio::spawn(async move {
-                                Self::liquidate_position(&account, &contract, &position).await;
-                            });
+                            to_liquidate.push(p.clone());
                             continue;
                         }
 
@@ -170,6 +167,12 @@ impl MonitoringService {
                                 self.near_liquidation_cooldowns.insert(pos_id, now);
                             }
                         }
+                    }
+
+                    to_liquidate.sort_by_key(|p| std::cmp::Reverse(p.debt_value_in_usd()));
+
+                    for position in &to_liquidate {
+                        Self::liquidate_position(&self.account, &self.liquidate_contract, position).await;
                     }
 
                     self.log_summary(now, near_liquidation_count);
