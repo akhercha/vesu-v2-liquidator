@@ -15,7 +15,6 @@ use clap::Parser;
 use pragma_common::services::{Service, ServiceGroup};
 use pragma_common::starknet::FallbackProvider;
 use pragma_common::telemetry::init_telemetry;
-use starknet::core::types::Felt;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::cli::RunCmd;
@@ -71,16 +70,13 @@ async fn main() -> anyhow::Result<()> {
         Arc::clone(&storage),
     );
 
-    let liquidate_contract_address = Felt::from_hex(&run_cmd.liquidate_contract_address)
-        .expect("Invalid liquidate contract address");
-
     let monitoring_service = MonitoringTask::new(
         account,
         provider.clone(),
         rx_from_indexer,
         wait_for_indexer,
         Arc::clone(&storage),
-        liquidate_contract_address,
+        run_cmd.liquidate_contract_address,
     );
 
     ServiceGroup::default()

@@ -3,6 +3,7 @@ pub mod account;
 use std::path::PathBuf;
 
 use anyhow::{Result, anyhow};
+use starknet::core::types::Felt;
 use url::Url;
 
 use crate::cli::account::AccountParams;
@@ -51,7 +52,7 @@ pub struct RunCmd {
         env = "LIQUIDATE_CONTRACT_ADDRESS",
         default_value = "0x6b895ba904fb8f02ed0d74e343161de48e611e9e771be4cc2c997501dbfb418"
     )]
-    pub liquidate_contract_address: String,
+    pub liquidate_contract_address: Felt,
 
     /// Path to the local storage directory.
     #[clap(
