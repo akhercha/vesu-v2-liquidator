@@ -80,6 +80,7 @@ impl MonitoringService {
     pub async fn run_forever(mut self) -> anyhow::Result<()> {
         tracing::info!("[🔭 Monitoring] Waiting for first vesu prices");
         VESU_PRICES.wait_for_first_prices().await;
+        tracing::info!("[🔭 Monitoring] 😁 Got first prices!");
 
         let wait_for_indexer = self
             .wait_for_indexer

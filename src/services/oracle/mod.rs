@@ -25,7 +25,7 @@ pub struct OracleService {
 }
 
 impl OracleService {
-    const PRICES_UPDATE_INTERVAL: Duration = Duration::from_secs(10);
+    const PRICES_UPDATE_INTERVAL: Duration = Duration::from_secs(2);
 
     pub fn new(starknet_provider: FallbackProvider) -> Self {
         Self {
