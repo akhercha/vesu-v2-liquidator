@@ -99,7 +99,7 @@ impl OracleService {
 
         let call_result = self
             .starknet_provider
-            .call(price_request, BlockId::Tag(BlockTag::Latest))
+            .call(price_request, BlockId::Tag(BlockTag::PreConfirmed))
             .await?;
 
         // NOTE: Works for now since prices always fit in the low part.
