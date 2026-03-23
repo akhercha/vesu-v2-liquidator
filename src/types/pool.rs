@@ -70,7 +70,6 @@ impl PoolName {
             Self::Re7USDCFrontier => {
                 felt_hex!("0x05c03e7e0ccfe79c634782388eb1e6ed4e8e2a013ab0fcc055140805e46261bd")
             }
-            // TODO(akhercha): replace with actual pool addresses
             Self::Re7ETH => {
                 felt_hex!("0x0635cb8ba1c3b0b21cb2056f6b1ba75c3421ce505212aeb43ffd56b58343fa17")
             }

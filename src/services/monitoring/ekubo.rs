@@ -7,7 +7,8 @@ use starknet::core::types::Felt;
 
 use crate::bindings::liquidate::{I129, PoolKey, RouteNode, Swap, TokenAmount};
 
-const EKUBO_QUOTE_ENDPOINT: &str = "https://quoter-mainnet-api.ekubo.org";
+const EKUBO_QUOTE_ENDPOINT: &str = "https://prod-api-quoter.ekubo.org";
+const STARKNET_MAINNET_CHAIN_ID: &str = "23448594291968334";
 const SCALE: u128 = 1_000_000_000_000_000_000;
 
 pub async fn get_ekubo_route(
@@ -21,7 +22,7 @@ pub async fn get_ekubo_route(
     let amount: u128 = amount.try_into().expect("Should fit in a u128 :)");
 
     let ekubo_api_endpoint = format!(
-        "{EKUBO_QUOTE_ENDPOINT}/-{amount}/{}/{}",
+        "{EKUBO_QUOTE_ENDPOINT}/{STARKNET_MAINNET_CHAIN_ID}/{amount}/{}/{}",
         from_token.to_fixed_hex_string(),
         to_token.to_fixed_hex_string()
     );
@@ -152,14 +153,11 @@ fn parse_route(split: &Value) -> Result<Vec<RouteNode>> {
                             .as_str()
                             .context("token1 is not a string")?,
                     )?),
-                    fee: u128::from_str_radix(
-                        pool_key["fee"]
-                            .as_str()
-                            .context("fee is not a string")?
-                            .trim_start_matches("0x"),
-                        16,
-                    )
-                    .context("Failed to parse fee as u128")?,
+                    fee: pool_key["fee"]
+                        .as_str()
+                        .context("fee is not a string")?
+                        .parse::<u128>()
+                        .context("Failed to parse fee as u128")?,
                     tick_spacing: pool_key["tick_spacing"]
                         .as_u64()
                         .context("tick_spacing is not a u64")?
